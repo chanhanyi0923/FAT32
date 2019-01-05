@@ -1,6 +1,8 @@
 
 #include "fat.h"
 
+extern struct fat_file pwd;
+
 void test_write_1(const char *path)
 {
   struct fat_file file;
@@ -24,13 +26,14 @@ void test_write_1(const char *path)
 
 }
 
-void test_write_2(const char *path)
+int test_write_2(const char *path)
 {
   struct fat_file file;
 
   /* Open */
   if (0 != fs_open(&file, path)) {
     printf("File %s open failed", path);
+    return 1;
   }
 
   file.loc = 0;
@@ -43,22 +46,109 @@ void test_write_2(const char *path)
   buf[size - 1] = '\n';
 
   if (fs_write(&file, buf, size) == 1) {
-    puts("fail");
+return 1;
   }
-
+return 0;
 }
 
 int main() {
-  init_fat_info();
+  init_fs();
+
+  char buf[512];
+  char arg0[128];
+  char arg1[128];
+  char arg2[128];
+
+  while (1) {
+    printf("%s $\n", pwd.path);
+    gets(buf);
+    sscanf(buf, "%s%s%s", arg0, arg1, arg2);
+    
+    if (strcmp(arg0, "cat") == 0) {
+      if (fs_cat(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "write") == 0) {
+      if (test_write_2(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "mkdir") == 0) {
+      if (fs_mkdir(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "touch") == 0) {
+      if (fs_touch(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "rm") == 0) {
+      printf("%s %s\n", arg0, arg1);
+      if (fs_rm(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "ls") == 0) {
+      if (fs_ls(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "cd") == 0) {
+      if (fs_cd(arg1) != 0) {
+        puts("fail");
+      }
+    } else if (strcmp(arg0, "mv") == 0) {
+      if (fs_mv(arg1, arg2) != 0) {
+        puts("fail");
+      }
+    }
+    puts("");
+  }
 
   /* test other file in same dir */
   /*
   fs_rm("/b/a.txt");
   */
+/*
+  fs_cd("/test");
 
-  fs_ls("/b/");
-  fs_ls("/");
-  fs_ls("/b");
+printf("%s $\n", pwd.path);
+fs_ls("/b/");
+printf("%s $\n", pwd.path);
+fs_ls("/");
+printf("%s $\n", pwd.path);
+fs_ls("/b");
+
+printf("%s $\n", pwd.path);
+fs_ls("c");
+printf("%s $\n", pwd.path);
+fs_ls("d");
+
+fs_touch("t1.txt");
+test_write_2("t1.txt");
+
+
+fs_cd("d");
+printf("%s $\n", pwd.path);
+
+fs_touch("t2.txt");
+test_write_2("t2.txt");
+
+
+fs_ls("");
+printf("%s $\n", pwd.path);
+fs_ls(".");
+printf("%s $\n", pwd.path);
+fs_ls("b");
+printf("%s $\n", pwd.path);
+fs_cd("../c");
+printf("%s $\n", pwd.path);
+
+fs_touch("t3.txt");
+test_write_2("t3.txt");
+
+
+fs_ls("b");
+printf("%s $\n", pwd.path);
+fs_ls(".");
+*/
+
 
   /*test ".."*/
 /*

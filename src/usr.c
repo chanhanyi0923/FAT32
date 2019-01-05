@@ -6,6 +6,9 @@
 #include "pc_env.h"
 #endif
 
+extern struct fat_file pwd;
+
+
 u32 fs_cat(u8 *path) {
   u8 filename[12];
   struct fat_file file;
@@ -142,7 +145,11 @@ u32 fs_ls(const u8 *path_) {
   for (i = 0; i < 256 && path_[i]; i ++) {
     path[i] = path_[i];
   }
-  if (path[-- i] == '/') {
+  path[i] = 0;
+  if (path[0] == 0) {
+    path[0] = '.';
+    path[1] = 0;
+  } else if (path[-- i] == '/') {
     path[i] = 0;
   }
 
@@ -167,6 +174,48 @@ u32 fs_ls(const u8 *path_) {
 
   return 0;
 fs_ls_fail:
+  return 1;
+}
+
+
+u32 fs_cd(const u8 *path_) {
+  u8 path[256];
+  u32 i;
+  struct fat_file file;
+
+  for (i = 0; i < 256 && path_[i]; i ++) {
+    path[i] = path_[i];
+  }
+  path[i] = 0;
+  if (path[-- i] == '/') {
+    path[i] = 0;
+  }
+
+  /* Open */
+  if (0 != fs_open(&file, path)) {
+    kernel_printf("File %s open failed\n", path);
+    goto fs_cd_fail;
+  }
+
+  /* check attr is dir */
+  if ((file.entry.attr.attr & 0x10) == 0) {
+    kernel_printf("%s is not a directory\n", path);
+    goto fs_cd_fail;
+  }
+
+  /* clone opened dir to pwd */
+  pwd.loc = 0;
+  pwd.dir_entry_pos = file.dir_entry_pos;
+  pwd.dir_entry_sector = file.dir_entry_sector;
+  for (i = 0; i < 32; i ++) {
+    pwd.entry.data[i] = file.entry.data[i];
+  }
+  for (i = 0; i < 256; i ++) {
+    pwd.path[i] = file.path[i];
+  }
+
+  return 0;
+fs_cd_fail:
   return 1;
 }
 

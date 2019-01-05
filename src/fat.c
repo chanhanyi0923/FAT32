@@ -6,6 +6,21 @@
 #endif
 
 struct fs_info fat_info;
+struct fat_file pwd;
+
+u32 init_fs() {
+  if (0 != init_fat_info()) {
+    goto init_fs_fail;
+  }
+  /* pwd */
+  if (0 != fs_open(&pwd, "")) {
+    goto init_fs_fail;
+  }
+
+  return 0;
+init_fs_fail:
+  return 1;
+}
 
 u32 init_fat_info() {
   u8 meta_buf[512];
@@ -69,6 +84,7 @@ u32 init_fat_info() {
   fat_info.total_data_clusters =
       fat_info.total_data_sectors / fat_info.BPB.attr.BPB_SecPerClus;
 
+  return 0;
 init_fat_info_err:
   return 1;
 }
@@ -415,6 +431,9 @@ u32 fs_next_slash(const u8 *f, u8 *filename11) {
 }
 
 u32 fs_find(struct fat_file *file) {
+  u8 *path;
+  u32 sector, begin_sector, next_sector;
+
   /* root */
   if (file->path[0] == 0) {
     file->dir_entry_pos = 0;
@@ -424,14 +443,15 @@ u32 fs_find(struct fat_file *file) {
     goto fs_find_suc;
   }
 
-  if (file->path[0] != '/') {
-    goto fs_find_fail;
+  if (file->path[0] == '/') {
+    path = file->path + 1;
+    begin_sector = fs_clus_to_sector_with_offset(fat_info.BPB.attr.BPB_RootClus);
+  } else {
+    path = file->path;
+    begin_sector = fs_clus_to_sector_with_offset(get_start_cluster(&pwd));
   }
 
-  u8 *path = file->path + 1;
-  u32 sector;
-  for (sector = fs_clus_to_sector_with_offset(fat_info.BPB.attr.BPB_RootClus);;
-       sector = fs_clus_to_sector_with_offset(get_start_cluster(file))) {
+  for (sector = begin_sector; ; sector = next_sector) {
     u8 filename11[12];
     path += fs_next_slash(path, filename11);
 
@@ -446,6 +466,7 @@ u32 fs_find(struct fat_file *file) {
       goto fs_find_fail;
     }
     path++;
+    next_sector = fs_clus_to_sector_with_offset(get_start_cluster(file));
   }
 
 fs_find_suc:
@@ -629,10 +650,20 @@ u32 fs_create(struct fat_file *file, const u8 *path) {
   for (i = 0; i < 256 && path[i] != 0; i++) {
     dir->path[i] = path[i];
   }
-  for (i --; dir->path[i] != '/'; i --) {
-    dir->path[i] = 0;
+
+  /* find last slash */
+  for (; i > 0 && dir->path[i] != '/'; i --);
+  if (dir->path[i] == '/') {
+    fs_next_slash(dir->path + i + 1, filename11);
+    for (; i < 256 && dir->path[i] != 0; i ++) {
+      dir->path[i] = 0;
+    }
+  } else {
+    fs_next_slash(dir->path, filename11);
+    dir->path[0] = '.';
+    dir->path[1] = 0;
   }
-  dir->path[i] = 0;
+
   dir->loc = 0;
 
   /* find dir */
@@ -646,7 +677,6 @@ u32 fs_create(struct fat_file *file, const u8 *path) {
   }
 
   sector = fs_clus_to_sector_with_offset(get_start_cluster(dir));
-  fs_next_slash(path + i + 1, filename11);
 
   /* if file already exists */
   if (fs_find_in_dir(sector, filename11, file) == 0) {
@@ -748,25 +778,23 @@ u32 fs_remove_file(struct fat_file *file) {
   u32 clus_count, end_clus_count;
   u32 clus, next_clus;
 
-  if (file->entry.attr.size == 0) {
-    goto fs_remove_end;
-  }
+  if (file->entry.attr.size > 0) {
+    end_clus_count = (file->entry.attr.size - 1) >> 12;
+    clus = get_start_cluster(file);
 
-  end_clus_count = (file->entry.attr.size - 1) >> 12;
-  clus = get_start_cluster(file);
-
-  for (clus_count = 0; clus_count <= end_clus_count; clus_count ++) {
-    if (fs_get_fat_entry_value(clus, &next_clus) == 1) {
-      goto fs_remove_fail;
+    for (clus_count = 0; clus_count <= end_clus_count; clus_count ++) {
+      if (fs_get_fat_entry_value(clus, &next_clus) == 1) {
+        goto fs_remove_fail;
+      }
+      /* clear fat */
+      if (fs_set_fat_entry_value(clus, 0) == 1) {
+        goto fs_remove_fail;
+      }
+      if (clus_count < end_clus_count && next_clus >= 0x0ffffff8) {
+        goto fs_remove_fail;
+      }
+      clus = next_clus;
     }
-    /* clear fat */
-    if (fs_set_fat_entry_value(clus, 0) == 1) {
-      goto fs_remove_fail;
-    }
-    if (clus_count < end_clus_count && next_clus >= 0x0ffffff8) {
-      goto fs_remove_fail;
-    }
-    clus = next_clus;
   }
 
   if (fs_remove_entry(file) == 1) {

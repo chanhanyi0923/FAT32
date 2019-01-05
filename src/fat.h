@@ -97,6 +97,10 @@ struct fs_info {
   u8 fat_fs_info[SECTOR_SIZE];
 };
 
+
+u32 init_fat_info();
+u32 fs_open(struct fat_file *file, const u8 *path);
+
 #endif
 
 
